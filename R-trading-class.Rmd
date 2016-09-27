@@ -1,0 +1,461 @@
+---
+title: "用R 做交易策略分析"
+author: "許sir"
+---
+
+### [PART 1].R-Basic 複習
+### 1.向量產生的幾種方式
+```{r message=FALSE, warning=FALSE}
+#向量產生的幾種方式
+a=1:100
+b=100:1
+c=rep(3,5)
+d=seq(3,51,2)
+
+```
+
+### 2.向量運算
+```{r message=FALSE, warning=FALSE}
+a=a+1
+a+b
+a*b
+```
+
+### 3.累積和
+```{r}
+sum(a)#和
+cumsum(a)#累積和
+```
+
+### 4.畫圖
+```{r}
+plot(cumsum(a),col="red",type="l")
+```
+
+### 5.迴圈
+```{r}
+a=0
+
+#1+1+1+…+1=?
+for (i in 1:100){a=a+1}
+
+#1+1+1+…+1=?
+while (a<=100){a=a+1}
+
+#1+3+5+…+97+99=?
+for (i in seq(1,99,by=2)){a=a+i}
+
+```
+
+
+### [PART 2].設定所需的函式庫(libraries)以及載入資料
+```{}
+install.packages("quantmod")
+```
+
+```{r}
+library(quantmod)
+setwd("D:/Rdata Practice/06Fintech/2016DSC-RTrading")
+```
+
+#### 2-1.Buy TSMC
+```{}
+下載資料(預設YahooFinance)
+‧蘋果:getSymbols("AAPL")
+‧台積電:STK=get(getSymbols("2330.tw"))
+
+不同的資料源:
+‧getSymbols('MSFT',src='google')
+‧getSymbols("DEXJPUS",src="FRED")
+
+資料格式
+‧使用head、tail
+‧五個欄位：開高低收、量、還原權值
+```
+
+
+#### 2-2.TEST AAPL
+```{r message=FALSE, warning=FALSE}
+getSymbols("AAPL")
+
+head(AAPL)
+tail(AAPL)
+```
+
+### [PART 3].設定所需的函式庫(libraries)以及載入資料
+
+#### 3-1-1.Buy TSMC
+```{}
+時間週期
+ ‧日K:Default
+ ‧週K:STK_week=to.weekly(STK)
+ ‧月K:STK_mon=to.monthly(STK)
+ ‧自行定義? 週三K
+時間範圍
+ ‧STK["2013"]
+ ‧to.weekly(STK["2013::2015"])
+ ‧STK["2013-01-01::2013-03-02"]
+畫圖(Charting)
+ ‧barChart(STK["2015-01-01::2015-02-03"])
+ ‧chartSeries(STK, subset="2015-12-1::2016-03-21",theme="white")
+```
+
+```{r message=FALSE, warning=FALSE}
+
+STK=get(getSymbols("2330.tw"))#台積電
+
+tail(STK)
+STK_week=to.weekly(STK)#改成周資料
+STK_mon=to.monthly(STK)#改成月資料
+
+chartSeries(STK)#畫圖
+chartSeries(STK, subset="2015-12-1::2016-09-20",theme="white")#在國外上漲是綠色
+
+#SMA是均線
+SMA(Cl(STK)) #cl是收盤價
+addTA(SMA(Cl(STK)), on=1, col="blue")## default: n=10
+addTA(SMA(Cl(STK),n=20), on=1, col="red")
+
+#布林通道(Bollinger band)
+addBBands() #20日均線
+
+STK=as.matrix(to.weekly(STK))
+```
+
+#### 3-1-2.回測前置作業
+```{r}
+
+rownames(STK)#STK.week的列名稱
+length(rownames(STK))#有多少個日期?
+numeric(length(rownames(STK)))#產生紀錄每筆交易損益的向量
+profit=setNames(numeric(length(rownames(STK))), rownames(STK))#產生紀錄每筆交易損益的向量，並附上日期
+
+profit#是向量
+```
+
+```{r}
+#台積電:週一開盤買，週五收盤賣
+#profit[m]=STK[m,4]-STK[m,1]#每周損益：周收盤價-周開盤價
+
+#每週都要計算?
+for (m in rownames(STK)) {	
+	profit[m]=STK[m,4]-STK[m,1] #第四行是收盤，第一行是開盤
+}
+
+profit
+sum(profit)#總損益
+cumsum(profit)#累計損益
+
+plot(cumsum(profit),type="l",col="red",lwd=2)
+abline(h=0,col="green")
+```
+
+#### 3-1-3.簡單的績效分析
+```{r}
+
+length(profit[profit>0])#贏的次數
+
+length(profit[profit>0])/length(profit[profit!=0])#勝率
+
+mean(profit[profit>0])#平均賺
+
+mean(profit[profit<0])#平均賠
+
+mean(profit[profit>0])/abs(mean(profit[profit<0]))#賺賠比=平均賺/平均賠
+```
+
+#### 3-1-4.績效模組: performance.R
+```{}
+Max draw-down 指帳戶淨值從最高點的滑落程度，意義在於，從任一時間點進場可能遇到的最糟狀況。
+回檔(DD)
+‧最好不要有回檔(虧損、風險)
+‧例如：定存最好!?
+絕對最大回檔(MDD)
+比例最大回檔(MDD%)
+反映的是穩定度的表現：
+‧總獲利/MDD
+```
+
+```{r}
+source("performance.R")
+performance(profit)
+
+```
+
+#### 3-1-5.獲利因子(profit factor)
+```{}
+反映的是你的策略品質
+意義：每輸1單位，必可再換來?單位的獲利
+‧勝率很低無所謂? Why?
+‧賺小賠大無所謂? Why?
+‧交易次數很少無所謂? Why?
+```
+
+```{r}
+#賺的和/|賠的和|
+sum(profit[profit>=0])/sum(profit[profit<0])#我每賠一塊錢會賺多少
+
+```
+
+#### 3-2.Buy HIGH TSMC
+```{}
+台積電這幾年都在多頭，每週開盤買當然賺!
+考慮多空:開低買，開高賣
+```
+
+#### 3-2-1.Buy HIGH TSMC
+```{r}
+lastC=STK[1,4]	##Close Price of the 1th Week(第一周不能交易只能記錄)
+
+for (m in rownames(STK)[-1]) {
+	if(STK[m,1]<lastC){profit[m]=STK[m,4]-STK[m,1]}
+	if(STK[m,1]>lastC){profit[m]=STK[m,1]-STK[m,4]}#開盤減收盤
+lastC=STK[m,4]
+}
+
+head(cbind(STK[,c(1,4)],profit))	##Check
+
+###performance module######
+source('performance.R')
+
+par(mfrow=c(1,2))
+plot(cumsum(profit),type="l",col="red",lwd=2)
+performance(profit)
+
+#ProfitBar(profit)
+
+```
+
+#### 3-2-2.[練習]：開低1%買，開高1%賣，收盤前空手
+```{r}
+lastC=STK[1,4]
+
+for (m in rownames(STK)[-1]) {
+  if(STK[m,1]<=lastC*0.99){profit[m]=STK[m,4]-STK[m,1]}
+  if (STK[m,1]>=lastC*1.01){profit[m]=STK[m,1]-STK[m,4]}
+lastC=STK[m,4]
+}
+```
+
+#### 3-3.扣掉交易成本
+```{}
+股票手續費
+‧成交金額*0.1425% ，
+‧買賣各一次
+‧小數點以下無條件捨去，不足20元以20元計
+```
+
+```{r}
+#證券交易稅：0.3%
+fee=STK[m,4]*0.006
+
+
+for (m in rownames(STK)[-1]) {
+fee=STK[m,1]*0.006	##commision fee
+#fee=0
+	if(STK[m,1]<lastC){profit[m]=STK[m,4]-STK[m,1]-fee}
+	if(STK[m,1]>lastC){profit[m]=STK[m,1]-STK[m,4]-fee}
+lastC=STK[m,4]
+}
+
+head(cbind(STK[,c(1,4)],profit))	##check
+
+plot(cumsum(profit),type="l",col="red",lwd=2)
+
+###performance module######
+
+source("performance.r")
+par(mfrow=c(1,2))
+performance(profit)
+ProfitBar(profit)
+
+```
+
+
+### [PART 4].馬丁格爾的聖盃
+```{}
+一種天真浪漫的賭法~
+Martingale: 贏了下注1單位，輸了就加倍。
+```
+
+#### 4-1.交易的馬丁格爾
+```{r}
+PZ=setNames(rep(1,length(profit)),names(profit))#產生一個計算每次部位大小的向量
+
+#要從第二周開始跑
+for (m in 2:length(profit)){ 
+	if (sign(profit)[m-1]<0){PZ[m]=2*PZ[m-1]} else #如果上次輸，下次加倍買 #sign是正負號
+	if (sign(profit)[m-1]>0){PZ[m]=1} else #如果上次贏，下次買一張
+	if (sign(profit)[m-1]==0){PZ[m]=PZ[m-1]}
+}
+
+head(cbind(profit,PZ,profit*PZ),10)
+
+```
+
+#### 4-2.交易的馬丁格爾將PZ前與PZ後畫在一起比較
+```{r}
+source("performance.R")
+
+par(mfrow=c(1,3))
+performance(profit)
+performance(profit*PZ)#內積
+ProfitBar(PZ)
+max(PZ)
+mean(PZ)
+```
+
+
+### [PART 5].交易的聖盃:資金管理的理論與實務
+```{}
+動量策略(順勢交易，買高賣低，違反人性):
+‧因為過去漲，所以現在買進；因為過去跌，所以賣出
+均值回歸(逆勢交易，買低賣高，大家都愛)：
+‧漲多了該回跌，跌深了該反彈
+牛頓第二運動定律:動者恆動，靜者恆靜?
+‧股價漲未來是否會繼續漲?股價跌未來是否會繼續跌?
+進場、加碼、停損、停利屬於哪一種?
+在交易裡，大部分違反人性的事，都是好事!
+‧不正常的人才會獲利!!!
+```
+
+#### 5-1.銅板賭局模擬(考慮勝率50%，賠率為2的賭局)
+```{}
+‧nbet=40## 賭幾局?
+‧Odds=2## odds(賠率)
+‧Pwin=0.5## win rate(勝率)
+‧initM=100## initial capital(初始資金)
+‧f=0.3## bidding fraction(下注比例)
+
+```
+
+```{r}
+nbet=40		## number of bidding
+odds=2			## odds
+pwin=0.5		## win rate
+initM=100		## initial capital
+f=0.3			## bidding fraction(總資金的30%)
+
+capital=rep(initM,1)  		## current capital(紀錄每一局資產)
+
+for(i in 2:nbet){	          ## 每一局
+	dice=sample(0:1,size=1,prob=c(0.5,0.5),replace=T)			 ## 模擬賭局輸贏都是50%
+	capital[i]=dice*capital[i-1]*f*(1+odds)+capital[i-1]*(1-f)	## 資金成長
+}
+ 	
+#畫累計損益
+plot(capital,type="l",col="red",lwd=3,font=2
+,xlab="The # of Bidding",ylab="The Growth of Capital"
+,main=paste("WinRate",pwin*100,"%,","Odds",odds,", Play",nbet,"Games, "
+,"Bidding",f*100,"%"))
+
+abline(h=initM,col="green",lty=2,lwd=3)
+```
+
+#### 5-2.凱利賭徒(“理論上”的最佳下注比例)
+```{}
+身為一個賭徒(交易員)“賭” 最佳化!
+身為一個數學家“資金管理” 最佳化!
+```
+
+#### 5-2-1.定義問題!!
+```{}
+勝率50%，賠率2的賭局
+初始資金100元，玩無限多次
+‧假設人生可以天長地久
+每次決定下注比例f (0% < f < 100%)
+‧假設資金可以無限分割
+問題：f選多少可讓資金成長最快速!
+```
+
+#### 5-3.台指期貨開盤突破昨日波動
+```{}
+‧開盤突破昨日波動*k1買進
+‧20點停損，收盤平倉
+‧回測標的：台指期貨
+‧回測時間：2010.05.25~2015.09.10
+```
+
+```{r}
+##TX futures, long at Open+Th,dayTrade,no StopPtofit
+
+currenttime=proc.time()	##current time
+
+es=read.table("tx.txt",header=TRUE,sep=',',colClasses=c("NULL","character","character","integer"
+,"integer","integer","integer","integer"))	## reading Data
+
+es=split(es,factor(es$Date,levels=unique(es$Date),ordered=TRUE))	##Split Data
+
+k1=0.55	##vol Par
+t1=90		## Time limit
+SL=20		#Stop Loss Points
+
+profit=setNames(numeric(length(es)), names(es))		## profit vector
+Cl=profit
+
+vol=max(es[[1]]$High)-min(es[[1]]$Low)	##Vol in 1th day
+Cl[1]=tail(es[[1]]$Close,1)
+
+for (m in names(es)[-1]){
+	esToday=es[[m]]
+	Cl[m]=tail(esToday$Close,1)
+	todayTime=unique(esToday$Time)	
+
+###Long
+	long=ceiling(esToday$Open[1]+(vol*k1))	
+
+	i=1								
+	while(esToday$High[i]<long && i<t1){i=i+1}  	##long at Open+Th before t1	
+	
+	if (esToday$High[i]>=long){j=i+1 			##long position                                            
+    	
+		while (esToday$Low[j]>long-SL && j<length(todayTime)){j=j+1} 	##check StopLoss
+		if (j==length(todayTime)){profit[m]=esToday$Close[j]-long-5}			##Exit at Close
+		if (esToday$Low[j]<=long-SL && j<length(todayTime)){profit[m]=-SL-5}		##StopLoss	
+	}
+
+vol=max(esToday$High)-min(esToday$Low)		##Today Vol
+}
+
+########Perofrmance module#######
+
+(spttime=proc.time()-currenttime)
+
+source("performance.R")
+performance(profit)
+
+```
+
+#### 5-4.固定分數(以台指期貨為例，固定風險比例2%)
+```{}
+source("7_TX_HL.R")
+```
+
+```{r}
+loss=7000#每口最大損失: 200*(30+5)=7,000
+initM=1000000#初始資金:1000,000
+risk=0.02#風險比例: 2% = 0.02
+capital=initM#設定目前總資金
+
+#設定固定分數向量
+PZ.FF=setNames(rep(1,length(profit)),names(profit))
+PZ.FF[1]=floor(capital*risk/loss)#計算第m天的下單口數
+
+#計算每一時期的固定分數
+for (m in 2:length(profit)){
+	PZ.FF[m]=floor(capital*risk/loss)
+	capital=capital+PZ.FF[m]*profit[m]*200
+}
+
+#程式碼檢查
+head(cbind(profit,PZ.FF,"P&L"=profit*PZ.FF
+,"Cap"=initM+cumsum(profit*PZ.FF*200)),1000)
+
+
+### performance module ###
+source("performance.R", encoding = 'BIG5',echo = FALSE)
+par(mfcol=c(1,2))
+performance(profit)
+performance(profit*PZ.FF)
+```
+
